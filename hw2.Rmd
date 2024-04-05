@@ -1,0 +1,339 @@
+---
+title: "hw2"
+author: "Parkminji"
+date: "2024-04-05"
+output: html_document
+---
+
+# hw1
+## i)
+$ y_{it} | \theta \sim Pois(exp(\theta_{i})) $
+$ \theta_{i} \sim Normal(0,0.5^2) $
+
+```{r}
+Y <- matrix( c(0,2,1,1,0,
+              1,1,0,0,0,
+              3,1,1,2,1,
+              0,1,0,1,0), nrow = 4, byrow = TRUE)
+
+Y_true <- c(1,0,2,0)
+Prem = rep(NA,4)
+
+
+# method1)
+t <- 5
+u = exp(1/2*0.5^2)
+v = exp(1/2*0.5^2)
+a = exp(0.5^2) * (exp(0.5^2) -1)
+
+z = t*a/(t*a + v) # z is so small -> not rely on observation samples
+
+
+for(p in 1:4){
+  Prem[p] = z*mean(Y[p,]) + (1-z) * u
+}
+
+
+# mse 
+mean((Prem - Y_true)^2)
+
+# method2)
+Prem2 = rep(NA, 4)
+
+Sig = matrix(a,nrow = 5, ncol = 5, byrow = TRUE)
+diag(Sig) <-  v + a
+
+C = matrix(a, nrow = 5, ncol = 1, byrow = TRUE)
+
+Alphas <- solve(Sig)%*%C
+
+alpha0 <- u * (1-sum(Alphas))
+
+for(p in 1:4){
+  Prem2[p]  <- alpha0 + Y[p,] %*% Alphas 
+}
+
+print(Prem)
+print(Prem2)
+
+print(mean((Prem - Y_true)^2))
+
+print(mean((Prem2 - Y_true)^2))
+
+```
+
+sample의 값이 거의 무의미하게 z값이 작게 나옴을 알 수 있다. 
+결론적으로, $\theta$값이 시간에 따라 바뀌지 않고,$\lambda$도 1로 고정되어 있으므로, 모든 사람의 $\alpha$ 추정값이 같다.
+또, 손으로 계산한 z credibility와 covariance matrix로 구한 결과 prem1과 prem2 값도 같음을 알 수 있다. 
+
+## ii)
+```{r}
+library(nimble)
+T <- 5
+I <- 4
+
+model <- nimbleCode({
+  #likelihood 
+  for(p in 1:I){
+    
+    for(t in 1:T){
+      y[p,t] ~ dpois(lambda=exp(theta[p]))
+    }
+  }
+  # prior
+  for(p in 1:I){
+    theta[p] ~ dnorm(0, 0.5) 
+    lambda[p]<-exp(theta[p])
+  }
+})
+
+
+
+my.data <- list(y = Y) 
+my.constants <-list( I=I, T=T)
+parameters.to.save <- c("theta", "lambda")
+
+# initial.values <- function() list(a = rgamma(1,shape=1, rate=1), 
+#                                   b = rgamma(1,shape=1, rate=1))
+n.iter <- 6000
+n.burnin <- 1000
+n.chains <- 3
+
+
+mcmc.output <- nimbleMCMC(code = model,
+                          constants = my.constants,
+                          data = my.data,
+                          #inits = initial.values,
+                          monitors = parameters.to.save,
+                          niter = n.iter,
+                          nburnin = n.burnin,
+                          nchains = n.chains)
+
+library(MCMCvis)
+MCMCsummary(object = mcmc.output, round = 2, params = c("theta","lambda"))
+#MCMCplot(object = mcmc.output, 
+#         params = 'theta')
+
+MCMCtrace(object = mcmc.output,
+          pdf = FALSE, # no export to PDF
+          ind = TRUE, # separate density lines per chain
+          params = c("theta","lambda"))
+
+
+
+```
+
+
+choose $\theta$ samples per each person(# =4)
+
+```{r}
+theta1_samples <- c(mcmc.output$chain1[,'theta[1]'], 
+               mcmc.output$chain2[,'theta[1]'],
+               mcmc.output$chain3[,'theta[1]'])
+
+theta2_samples <- c(mcmc.output$chain1[,'theta[2]'], 
+               mcmc.output$chain2[,'theta[2]'],
+               mcmc.output$chain3[,'theta[2]'])
+
+
+theta3_samples <- c(mcmc.output$chain1[,'theta[3]'], 
+               mcmc.output$chain2[,'theta[3]'],
+               mcmc.output$chain3[,'theta[3]'])
+
+
+theta4_samples <- c(mcmc.output$chain1[,'theta[4]'], 
+               mcmc.output$chain2[,'theta[4]'],
+               mcmc.output$chain3[,'theta[4]'])
+```
+
+$E[y_{6}|y_{1:5}] = E[E[y_{6}| \theta, y_{1:5}]|y_{1:5}]$
+$prem = E[e^{\theta} | y_{1:5}]$
+
+```{r}
+
+c(mean(exp(theta1_samples)),
+  mean(exp(theta2_samples)),
+  mean(exp(theta3_samples)),
+  mean(exp(theta4_samples)))
+
+```
+Prem
+[1] 0.9276815 0.6809843 1.4210758 0.6809843
+
+Prem2
+[1] 0.9276815 0.6809843 1.4210758 0.6809843
+
+위와 같은 값이므로, 비슷한 산출 결과를 냄을 알 수 있다. 이때, pois-normal의 경우,
+linear이 optimal값이 아니므로, credibility는 최적 추정치라고 볼 수 없다.
+그러므로, nimble로 구한 $\theta$ sampling과는 값차이가 나지만, 대체적으로 비슷한것으로보아 잘 추정하고 있음을 알 수 있다. 
+
+
+#hw2
+i)
+```{r}
+a <- -1/2 * (0.6)^2
+print(a)
+```
+ii)
+
+```{r}
+X = matrix( c( 0.7,1.0,0.5,0,
+               0.7,1.0,0.6,0,
+               0.7,1.1,0.5,0.1,
+               0.8,1.0,1.0,0.1,
+               0.8,1.0,0.5,0,
+               0.8,1.1,0.5,0.1), nrow = 4, ncol = 6, byrow = TRUE)
+
+Lambda <- exp(-0.1 + 0.15 * X )
+Y_true <- c(1,0,2,0)
+
+T <- 5
+I <- 4
+
+Sig <- matrix(NA, nrow = T, ncol = T, byrow = TRUE)
+C <- matrix(NA, nrow = T, ncol = 1, byrow = TRUE)
+Prem <- rep(NA, I)
+
+for(p in 1:I){
+  for(i in 1:T){
+    for(j in 1:T){
+      # for diff time
+    if(i!=j) {Sig[i,j] <- Lambda[p,i] * Lambda[p,j] * (exp(0.6^2)-1)}
+      # for diff time
+     else    {Sig[i,j] <- Lambda[p,i] * Lambda[p,j] * (exp(0.6^2)-1) +Lambda[p,i]
+              C[i,] <- Lambda[p,i] * Lambda[p,6] * (exp(0.6^2)-1)}
+  }
+  }
+  
+  Alphas <- solve(Sig) %*% C 
+  alpha0 <- Lambda[p,6] - Lambda[p, 1:5] %*% Alphas
+  Prem[p] <- alpha0 + Y[p,] %*% Alphas
+}
+
+print(Prem)
+mean((Prem[p] - Y_true)^2)
+
+Lambda
+```
+Prem2 <- $\lambda = 1$
+[1] 0.9276815 0.6809843 1.4210758 0.6809843
+
+Prem <- $\Lambda$ matrix 이용
+[1] 0.9147432 0.5457438 1.4704777 0.5457100
+
+$\Lambda$ matrix를 보면 1보다 큰 값들이 많다. 이전 hw1의 경우 lambda =1 로 고정되어 있는 상황이었는데, 지금은 설명변수로 가중치를 더 주어, 평균 사고건수가 증가한 상태의 모델의 premium을 구하는 상황으로 바뀐 것을 알 수 있다. 즉, 시간에 따라, 
+
+[1,] 1.0050125 1.0512711 0.9753099 0.9048374 1.0050125 1.0512711
+
+이렇게 바뀌는 것을 알 수 있는데, 이를 보아 더 평균 사고 건수가 낮다고 가정함을 알 수 있다. 그러므로 이에 대한 6번째 사고 건수 prem도 변동성을 가짐을 알 수 있다. 
+
+
+
+# hw3
+
+```{r}
+
+
+Y <- matrix( c(0,2,1,1,0,
+              1,1,0, NA,0,
+              NA,NA,NA,NA,1,
+              NA,NA,0,1,0), nrow = 4, byrow = TRUE)
+
+Y_target <- c(1,0,2,0)
+I.mat <- matrix(c(1,1,1,1,1,
+                  1,1,1,0,1,
+                  0,0,0,0,1,
+                  0,0,1,1,1), nrow = 4, byrow = TRUE)
+I.mat <- I.mat == TRUE
+
+# make Sigma matrix per p-th person by using indicator matrix
+
+# example 
+# return 4th row of Y values when indicator == true
+Y[4,I.mat[4,]] # 0 1 0 
+
+
+### code
+# define I.mat, Y, Lam
+X = matrix( c( 0.7,1.0,0.5,0,
+               0.7,1.0,0.6,0,
+               0.7,1.1,0.5,0.1,
+               0.8,1.0,1.0,0.1,
+               0.8,1.0,0.5,0,
+               0.8,1.1,0.5,0.1), nrow = 4, ncol = 6, byrow = TRUE)
+
+Lam <- exp(-0.1 + 0.15 * X )
+
+I <- dim(Y)[1]
+Prem <- rep(NA, I)
+
+
+for(p in 1:I){
+
+  y = Y[p, I.mat[p,]]
+  lamb_vec = Lam[p, c(I.mat[p,], TRUE)] # we always has lambda6
+  T = length(y)
+  Sig <-matrix(NA, nrow=T, ncol = T, byrow = TRUE)
+  C <- matrix(NA, nrow = T, ncol = 1, byrow = TRUE)
+  for(i in 1:T){
+    for(j in 1:T){
+      if(i!=j){Sig[i,j] <- lamb_vec[i] * lamb_vec[j] * exp(0.6^2)}
+      else    {Sig[i,j] <- lamb_vec[i] * lamb_vec[j] * exp(0.6^2) +
+                           lamb_vec[i]
+               C[i,] <- lamb_vec[i] * lamb_vec[j] * exp(0.6^2)}
+    }
+  }
+  
+  Alphas  = solve(Sig) %*% C
+  alpha0 <- lamb_vec[T+1] - lamb_vec[1:T] %*% Alphas
+  
+  Prem[p] <- alpha0 + y %*% Alphas
+}
+
+print(Prem)
+
+mean((Prem - Y_target)^2)
+```
+# hw4
+
+```{r}
+sum_10 <- 10
+Sig <- matrix(0.06, nrow = 10, ncol = 10, byrow = TRUE)
+C <- matrix(NA, nrow = 10, byrow = TRUE)
+Alphas <- rep(NA, 10)
+
+for(i in 1:10){
+  Sig[i,i] <- 0.61
+  C[i,] <- 0.06
+}
+
+Alphas = solve(Sig) %*% C
+
+alpha0 <- 0.7 *(1-sum(Alphas))
+
+Prem = alpha0 + Alphas[1,1] * sum_10
+
+print(Prem)
+```
+
+
+# hw5
+
+```{r}
+
+Y <- c(1,2,0,0,1)
+Sig <- matrix( 1/12, nrow = 5, ncol = 5, byrow = TRUE)
+C <- matrix( 1/12, nrow = 5, byrow = TRUE)
+Alphas <- rep(NA, 5)
+Prem <- 0
+
+diag(Sig) = 7/12
+Alphas <- solve(Sig) %*% C
+
+u <- 1/2
+alpha0 <- u * (1- sum(Alphas))
+
+Prem = alpha0 + Y %*% Alphas
+Prem
+```
+
