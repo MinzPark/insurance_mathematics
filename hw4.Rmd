@@ -1,0 +1,304 @@
+---
+title: "hw4"
+author: "Parkminji"
+date: "2024-04-26"
+output: html_document
+---
+
+
+```{r}
+# data generate
+m1=3
+v1=5
+
+m2=10
+v2=5
+
+b1 = m1/v1
+a1 = m1*b1
+
+b2 = m2/v2
+a2 = m2*b2
+
+n=5000
+set.seed(1)
+Y1 = rgamma(n/2, shape=a1, rate=b1)
+Y2 = rgamma(n/2, shape=a2, rate=b2)
+Y=c(Y1, Y2) 
+plot(density(Y)) # bi-modal 
+```
+
+
+Log-Normal
+
+```{r}
+f_ln <- function(y, params){
+  mu = params[1]
+  sigma = params[2]
+  -mean(dlnorm(y, meanlog = mu, sdlog = sigma, log=TRUE))
+}
+
+result <- optim(f_ln, y=Y, par=c(1,1))
+
+(mu_hat <- result$par[1])
+(sigma_hat <- result$par[2])
+```
+
+1. sampling $E[Y], E[(Y-d)_{+}], E[Y \wedge d]$
+```{r}
+
+nsim = 1000000
+sample <- rlnorm(nsim, mu_hat, sigma_hat)
+
+# true
+Emin_y_d = E_ymd = rep(NA, 20)
+
+# y ~ ln 
+Emin_y_d_ln = E_ymd_ln = rep(NA, 20)
+
+Ey_ln = mean(sample)
+Ey     = mean(Y) # E[X]
+
+
+
+for(d in 1:20){
+   # E[X] mu parameter 
+  E_ymd_ln[d]    = mean(pmax(sample-d, 0)) # E[(X-d)+] 
+  Emin_y_d_ln[d] = mean(pmin(sample,d)) # E[X^d]
+  
+  # true value
+  E_ymd[d]    = mean(pmax(Y-d, 0)) # E[(X-d)+]
+  Emin_y_d[d] = mean(pmin(Y,d))
+}
+
+
+##### LN은 exponential dispersion family 가 아니므로 평균조차 맞추지 X ㅠㅠ
+```
+
+
+```{r}
+cat('Ey:',Ey,'\n\n','Ey_ln:',Ey_ln,"\n\n")
+cat('E_ymd:',E_ymd,'\n\n','E_ymd_ln:',E_ymd_ln,"\n\n")
+cat('Emin_y_d:',Emin_y_d,'\n\n','Emin_y_d_ln:',Emin_y_d_ln)
+```
+
+
+2. exact derive $E[(Y-d)_{+}]$ using SOA Table
+and property: $E[(Y-d)_{+}] = E[Y] -  E[Y \wedge d]$
+
+```{r}
+#Lognormal's E[X_d]
+X_d <- function(d, mu, sigma, k){
+  exp(k*mu+(1/2)*(k^2*sigma^2))*pnorm((log(d)-mu-k*sigma^2)/sigma)+d^k*(1-pnorm((log(d)-mu)/sigma))
+}
+
+# true
+Emin_y_d = E_ymd = rep(NA, 20)
+
+# y ~ ln 
+Emin_y_d_ln = E_ymd_ln = rep(NA, 20)
+
+Ey_ln = exp(mu_hat+sigma_hat^2/2) # E[X] 
+Ey     = mean(Y) # E[X]
+
+for(d in 1:20){
+   # E[X] mu parameter 
+  Emin_y_d_ln[d] = X_d(d, mu_hat, sigma_hat, k=1) # E[X_d] # E[X^d]
+  E_ymd_ln[d]    = Ey_ln - Emin_y_d_ln[d] # E[(X-d)+] 
+  
+  # true value
+  E_ymd[d]    = mean(pmax(Y-d, 0)) # E[(X-d)+]
+  Emin_y_d[d] = mean(pmin(Y,d))
+}
+
+
+```
+
+
+```{r}
+cat('Ey:',Ey,'\n\n','Ey_ln:',Ey_ln,"\n\n")
+cat('E_ymd:',E_ymd,'\n\n','E_ymd_ln:',E_ymd_ln,"\n\n")
+cat('Emin_y_d:',Emin_y_d,'\n\n','Emin_y_d_ln:',Emin_y_d_ln)
+```
+
+4. AIC
+
+```{r}
+# gamma
+
+f_gam <- function(y, params){
+  shape = params[1]
+  rate = params[2]
+  -mean(dgamma(y, shape=shape, rate=rate, log=TRUE))
+}
+
+result2 <- optim(f_gam, y=Y, par=c(1,1))
+a_hat <- result2$par[1]
+b_hat <- result2$par[2]
+
+# Weibull
+
+f_wei <- function(y, params){
+  scale = params[1]
+  shape = params[2]
+  -mean(dweibull(y, shape = shape, scale = scale, log=TRUE))
+}
+
+result3 <- optim(f_wei, y=Y, par=c(1,1))
+(lambda_hat <- result3$par[1])
+(k_hat <- result3$par[2])
+
+
+(AIC_ln = -2 * sum(dlnorm(Y, meanlog  =mu_hat, sdlog = sigma_hat,log=TRUE)) +2*2)
+(AIC_gam = -2 * sum(dgamma(Y, shape=a_hat, rate=b_hat,log=TRUE)) +2*2)
+(AIC_wei = -2 * sum(dweibull(Y, scale = lambda_hat, shape = k_hat,log=TRUE))+2*2)
+
+```
+```{r}
+cat("AIC_ln:", AIC_ln,'\n',
+    "AIC_gam:", AIC_gam,'\n',
+    "AIC_wei:", AIC_wei,'\n')
+```
+
+
+pr2.
+
+i.
+
+Data generation
+
+```{r}
+set.seed(1)
+n=5000
+x1 = sample( c(0,1), n, replace =TRUE) # ex) 남/여
+x2 = sample( c(0,1), n, replace =TRUE) # ex) 외제차/국산차
+
+m1=exp(1.1 + 0.4 * x1[1:(n/2)] - 0.5 *x2[1:(n/2)]) #mean
+v1=3 #dispersion
+
+m2=exp(2.3 - 0.8*x1[(n/2+1):n]+0.6*x2[(n/2+1):n]) #mean
+v2=3 #dispersion
+
+b1 = m1/v1
+a1 = m1*b1
+
+b2 = m2/v2
+a2 = m2*b2
+
+Y1 = rgamma(n/2, shape=a1, rate=b1)
+Y2 = rgamma(n/2, shape=a2, rate=b2)
+Y=c(Y1, Y2)
+
+ones <- rep(1, length(Y))
+X <- cbind(ones, x1, x2)
+head(X)
+
+```
+
+```{r}
+f_wei <- function(y, x1, x2, params){
+  shape = exp(params[1]) #shape>0이어야 하고, 원래의 optim search 범위가 -Inf ~ Inf이므로 error 발생안되게 하기위함.
+  scale_i = exp(params[2] + params[3] * x1 + params[4] * x2)
+  -mean(dweibull(y, shape = shape, scale = scale_i, log = TRUE))
+}
+
+result4 <- optim(f_wei,y = Y, x1 = x1, x2 = x2, par = c(0,0,0,0))
+shape_hat <- exp(result4$par[1])
+scale_i_hat <- exp(X %*% result4$par[2:4])
+
+y_sam <- data.frame(p1 = rep(NA,100000),
+                    p2 = rep(NA,100000),
+                    p3 = rep(NA,100000),
+                    p4 = rep(NA,100000),
+                    p5 = rep(NA,100000))
+for(i in 1:5){
+  y_sam[,i] = rweibull(100000, shape=shape_hat, scale=scale_i_hat[i])
+}
+
+E_y_sam = apply(y_sam,2, mean)
+
+
+Emin_y_d_sam= data.frame(p1 = rep(NA,4),
+                    p2 = rep(NA,4),
+                    p3 = rep(NA,4),
+                    p4 = rep(NA,4),
+                    p5 = rep(NA,4),
+                    row.names = c('d1','d3','d5','d10'))
+
+# Y^d sample 
+Y_m_d <-  data.frame(p1 = rep(NA,100000),
+                    p2 = rep(NA,100000),
+                    p3 = rep(NA,100000),
+                    p4 = rep(NA,100000),
+                    p5 = rep(NA,100000))
+
+for(d in c(1,3,5,10)){
+  
+  for(j in 1:5){
+  Y_m_d[,j] = pmin(y_sam[,j],d)
+  }
+  Emin_y_d_sam[paste0('d',d),] = apply(Y_m_d,2, mean)
+}
+
+```
+
+```{r}
+cat('E[y_{1:5}]:',E_y_sam,"\n") # for 1:5, E[y]
+print(Emin_y_d_sam) # for 1:5, E[y^d]
+```
+
+
+last five
+```{r}
+
+y_sam <- data.frame(p1 = rep(NA,100000),
+                    p2 = rep(NA,100000),
+                    p3 = rep(NA,100000),
+                    p4 = rep(NA,100000),
+                    p5 = rep(NA,100000))
+for(i in 1:5){
+  y_sam[,i] = rweibull(100000, shape=shape_hat, scale=scale_i_hat[i+4995])
+}
+
+E_y_sam = apply(y_sam,2, mean)
+
+
+Emin_y_d_sam= data.frame(p1 = rep(NA,4),
+                    p2 = rep(NA,4),
+                    p3 = rep(NA,4),
+                    p4 = rep(NA,4),
+                    p5 = rep(NA,4),
+                    row.names = c('d1','d3','d5','d10'))
+
+# Y^d sample 
+Y_m_d <-  data.frame(p1 = rep(NA,100000),
+                    p2 = rep(NA,100000),
+                    p3 = rep(NA,100000),
+                    p4 = rep(NA,100000),
+                    p5 = rep(NA,100000))
+
+for(d in c(1,3,5,10)){
+  
+  for(j in 1:5){
+  Y_m_d[,j] = pmin(y_sam[,j],d)
+  }
+  Emin_y_d_sam[paste0('d',d),] = apply(Y_m_d,2, mean)
+}
+
+
+cat('E[y_{1:5}]:',E_y_sam,"\n") # for last 1:5, E[y]
+print(Emin_y_d_sam) # for last 1:5, E[y^d]
+```
+
+
+```{r}
+y_sample<- rweibull(10000,shape = shape_hat, scale = scale_i_hat)
+hist(y_sample, freq = F)
+lines(density(y_sample))
+```
+
+```{r}
+hist(Y, freq = F)
+lines(density(Y))
+```
+
